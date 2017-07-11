@@ -6,29 +6,32 @@ namespace ObjectVersioning
 {
   public abstract class VersionedValue
   {
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; }
 
-    private readonly List<Guid> _references = new List<Guid>();
+    protected IHistoryStorage HistoryStorage { get; private set; }
 
-    private readonly VersionedReference _reference;
-    
-    protected readonly HistoryStorage _historyStorage;
-
-    public VersionedValue(HistoryStorage historyStorage)
+    public VersionedValue(Guid id)
     {
-      _historyStorage = historyStorage ?? throw new ArgumentNullException(nameof(historyStorage));
-      _reference = new VersionedReference(Id);
+      Id = id;
+      HistoryStorage = NullStorage.Instance;
     }
 
-    public VersionedReference AddReference(VersionedValue owner)
+    public VersionedValue(IHistoryStorage historyStorage)
     {
-      _references.Add(owner.Id);
-      return _reference;
+      if(historyStorage != null)
+      {
+        throw new ArgumentNullException(nameof(historyStorage));
+      }
+      Id = Guid.NewGuid();
+      HistoryStorage = historyStorage;
+
+      RecordNewObjectAction();
     }
 
-    public void RemoveReference(VersionedValue owner)
+    private void RecordNewObjectAction()
     {
-      _references.Remove(owner.Id);
+      var action = new NewObjectAction(Id, GetType().FullName);
+      HistoryStorage.RecordAction(action);
     }
   }
 }

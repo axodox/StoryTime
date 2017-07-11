@@ -2,13 +2,13 @@
 
 namespace ObjectVersioning.Actions
 {
-  public class PropertySetAction : EditAction
+  public class SetPropertyAction : EditAction
   {
     public string PropertyName { get; }
 
     public object PropertyValue { get; }
 
-    public PropertySetAction(Guid targetId, string propertyName, object propertyValue)
+    public SetPropertyAction(Guid targetId, string propertyName, object propertyValue)
       : base(targetId)
     {
       PropertyName = propertyName;
