@@ -7,24 +7,19 @@ namespace StoryTime.Test
 {
   class Program
   {
-    class Test
-    {
-      public string Name { get; }
-
-      public Test(string name = null)
-      {
-        Name = name;
-      }
-    }
-
     static void Main(string[] args)
     {
-      Console.WriteLine("Hello World!");
-      var test = JsonConvert.DeserializeObject<Test>("{\"Name\" : \"test\"}");
+      var testEntity = VersionedType.New<ITestEntity>();
+      testEntity.Name = "sad";
+      testEntity.Number = 4;
 
-      var type = VersionedType.Get<ITestEntity>();
+      var childEntity = VersionedType.New<ITestEntity>();
+      childEntity.Name = "child";
+      childEntity.Number = 1;
+      testEntity.Child = childEntity;
 
-      var value = Activator.CreateInstance(type, Guid.NewGuid());
+      var text = VersionedType.Serialize(testEntity);
+      var entity = VersionedType.Deserialize<ITestEntity>(text);
     }
   }
 
@@ -33,15 +28,17 @@ namespace StoryTime.Test
     string Name { get; set; }
 
     int Number { get; set; }
+
+    ITestEntity Child { get; set; }
   }
 
-  class Character : VersionedObject, ITestEntity
+  class TestEntity : VersionedObject, ITestEntity
   {
-    public Character(Guid id) : base(id)
+    public TestEntity(Guid id) : base(id)
     {
     }
 
-    public Character(IHistoryStorage historyStorage) : base(historyStorage)
+    public TestEntity(IHistoryStorage historyStorage) : base(historyStorage)
     {
     }
 
@@ -72,6 +69,33 @@ namespace StoryTime.Test
         if (Equals(value, _number)) return;
         _number = value;
         RecordSetPropertyActionAction(nameof(Number), value);
+      }
+    }
+
+    private TestEntity _child;
+    public TestEntity Child
+    {
+      get
+      {
+        return _child;
+      }
+      set
+      {
+        if (Equals(value, _child)) return;
+        _child = value;
+        RecordSetPropertyActionAction(nameof(Child), value);
+      }
+    }
+
+    ITestEntity ITestEntity.Child
+    {
+      get
+      {
+        return Child;
+      }
+      set
+      {
+        Child = value as TestEntity;
       }
     }
   }

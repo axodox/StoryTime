@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,6 +22,8 @@ namespace ObjectVersioning
 
     private const MethodAttributes _propertyMethodAttributes = MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final | MethodAttributes.Virtual;
 
+    private const MethodAttributes _interfacePropertyMethodAttributes = MethodAttributes.Private | MethodAttributes.SpecialName | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final | MethodAttributes.Virtual;
+
     private static readonly ModuleBuilder _moduleBuilder;
 
     private static readonly object _syncRoot = new object();
@@ -31,6 +34,17 @@ namespace ObjectVersioning
     {
       var assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(_assemblyName), AssemblyBuilderAccess.Run);
       _moduleBuilder = assemblyBuilder.DefineDynamicModule("MainModule");
+    }
+
+    public static T New<T>()
+    {
+      return (T)New(typeof(T));
+    }
+
+    public static object New(Type type, IHistoryStorage storage = null)
+    {
+      var implementation = Get(type);
+      return Activator.CreateInstance(implementation, storage ?? NullStorage.Instance);
     }
 
     public static Type Get<T>()
@@ -46,7 +60,7 @@ namespace ObjectVersioning
         {
           if (!_types.TryGetValue(type.FullName, out implementation))
           {
-            implementation = Implement(type);
+            implementation = ImplementType(type);
           }
         }
       }
@@ -54,7 +68,22 @@ namespace ObjectVersioning
       return implementation;
     }
 
-    private static Type Implement(Type type)
+    public static T Deserialize<T>(string value)
+    {
+      return (T)Deserialize(value, typeof(T));
+    }
+
+    public static object Deserialize(string value, Type type)
+    {
+      return JsonConvert.DeserializeObject(value, Get(type));
+    }
+
+    public static string Serialize(object value)
+    {
+      return JsonConvert.SerializeObject(value, Formatting.Indented);
+    }
+
+    private static Type ImplementType(Type type)
     {
       var typeInfo = type.GetTypeInfo();
       if (!typeInfo.IsInterface)
@@ -68,6 +97,7 @@ namespace ObjectVersioning
       var typeName = _namespaceName + "." + (type.Name.StartsWith("I") ? type.Name.Substring(1) : type.Name);
       var typeBuilder = _moduleBuilder.DefineType(typeName, _typeAttributes, baseType);
       typeBuilder.AddInterfaceImplementation(type);
+      _types[type.FullName] = typeBuilder.AsType();
 
       foreach (var constructor in baseTypeInfo.DeclaredConstructors)
       {
@@ -76,10 +106,10 @@ namespace ObjectVersioning
 
       foreach (var propertyInfo in typeInfo.DeclaredProperties)
       {
-        DefineProperty(typeBuilder, propertyInfo);
+        DefineProperty(type, typeBuilder, propertyInfo);
       }
 
-      return typeBuilder.CreateTypeInfo().AsType();
+      return _types[type.FullName] = typeBuilder.CreateTypeInfo().AsType();
     }
 
     private static void DefineRelayConstructor(Type baseType, TypeBuilder typeBuilder, ConstructorInfo baseConstructor)
@@ -87,6 +117,12 @@ namespace ObjectVersioning
       var parameters = baseConstructor.GetParameters();
       var parameterTypes = parameters.Select(p => p.ParameterType).ToArray();
       var constructorBuilder = typeBuilder.DefineConstructor(_constructorAttributes, CallingConventions.HasThis, parameterTypes);
+      
+      if(baseConstructor.GetCustomAttribute<JsonConstructorAttribute>() != null)
+      {
+        var jsonConstructor = typeof(JsonConstructorAttribute).GetTypeInfo().DeclaredConstructors.FirstOrDefault(p => p.GetParameters().Length == 0);
+        constructorBuilder.SetCustomAttribute(new CustomAttributeBuilder(jsonConstructor, new object[0]));
+      }
 
       for (var index = 0; index < parameters.Length; index++)
       {
@@ -100,42 +136,79 @@ namespace ObjectVersioning
       ilGenerator.Emit(OpCodes.Ret);
     }
 
-    private static void DefineProperty(TypeBuilder typeBuilder, PropertyInfo propertyInfo)
+    private static void DefineProperty(Type type, TypeBuilder typeBuilder, PropertyInfo propertyInfo)
     {
-      var fieldBuilder = typeBuilder.DefineField("_" + propertyInfo.Name, propertyInfo.PropertyType, FieldAttributes.Private);
+      var propertyName = propertyInfo.Name;
+      var propertyType = propertyInfo.PropertyType;
+      var isInterface = propertyType.GetTypeInfo().IsInterface;
+      if (isInterface)
+      {
+        propertyType = Get(type);
+      }
+      
+      var fieldBuilder = typeBuilder.DefineField("_" + propertyName, propertyType, FieldAttributes.Private);
 
-      var getMethodBuilder = typeBuilder.DefineMethod("get_" + propertyInfo.Name, _propertyMethodAttributes, propertyInfo.PropertyType, Type.EmptyTypes);
+      var getMethodBuilder = typeBuilder.DefineMethod("get_" + propertyName, _propertyMethodAttributes, propertyType, Type.EmptyTypes);
       var getIlGenerator = getMethodBuilder.GetILGenerator();
       getIlGenerator.Emit(OpCodes.Ldarg_0);
       getIlGenerator.Emit(OpCodes.Ldfld, fieldBuilder);
       getIlGenerator.Emit(OpCodes.Ret);
 
-      var setMethodBuilder = typeBuilder.DefineMethod("set_" + propertyInfo.Name, _propertyMethodAttributes, null, new[] { propertyInfo.PropertyType });
+      var setMethodBuilder = typeBuilder.DefineMethod("set_" + propertyName, _propertyMethodAttributes, null, new[] { propertyType });
       var setIlGenerator = setMethodBuilder.GetILGenerator();
-
       setIlGenerator.DeclareLocal(typeof(bool));
       var endLabel = setIlGenerator.DefineLabel();
       setIlGenerator.Emit(OpCodes.Ldarg_0);
       setIlGenerator.Emit(OpCodes.Ldfld, fieldBuilder);
-      if (!propertyInfo.PropertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyInfo.PropertyType);
+      if (!propertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyType);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
-      if (!propertyInfo.PropertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyInfo.PropertyType);
+      if (!propertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyType);
       setIlGenerator.Emit(OpCodes.Call, typeof(object).GetRuntimeMethod("Equals", new[] { typeof(object), typeof(object) }));
       setIlGenerator.Emit(OpCodes.Brtrue_S, endLabel);
       setIlGenerator.Emit(OpCodes.Ldarg_0);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
       setIlGenerator.Emit(OpCodes.Stfld, fieldBuilder);
       setIlGenerator.Emit(OpCodes.Ldarg_0);
-      setIlGenerator.Emit(OpCodes.Ldstr, propertyInfo.Name);
+      setIlGenerator.Emit(OpCodes.Ldstr, propertyName);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
-      if (!propertyInfo.PropertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyInfo.PropertyType);
+      if (!propertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyType);
       setIlGenerator.Emit(OpCodes.Call, typeof(VersionedObject).GetTypeInfo().GetDeclaredMethod("RecordSetPropertyActionAction"));
       setIlGenerator.MarkLabel(endLabel);
       setIlGenerator.Emit(OpCodes.Ret);
 
-      var propertyBuilder = typeBuilder.DefineProperty(propertyInfo.Name, PropertyAttributes.None, propertyInfo.PropertyType, Type.EmptyTypes);
+      var propertyBuilder = typeBuilder.DefineProperty(propertyName, PropertyAttributes.None, propertyType, Type.EmptyTypes);
       propertyBuilder.SetGetMethod(getMethodBuilder);
       propertyBuilder.SetSetMethod(setMethodBuilder);
+
+      if (isInterface)
+      {
+        DefineInterfaceProperty(type, typeBuilder, propertyInfo, propertyBuilder);
+      }
+    }
+
+    private static void DefineInterfaceProperty(Type type, TypeBuilder typeBuilder, PropertyInfo propertyInfo, PropertyBuilder propertyBuilder)
+    {
+      var getMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".get_" + propertyInfo.Name, _interfacePropertyMethodAttributes, propertyInfo.PropertyType, Type.EmptyTypes);      
+      var getIlGenerator = getMethodBuilder.GetILGenerator();
+      getIlGenerator.Emit(OpCodes.Ldarg_0);
+      getIlGenerator.Emit(OpCodes.Call, propertyBuilder.GetMethod);
+      getIlGenerator.Emit(OpCodes.Ret);
+      typeBuilder.DefineMethodOverride(getMethodBuilder, propertyInfo.GetMethod);
+
+      var setMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".set_" + propertyInfo.Name, _interfacePropertyMethodAttributes, null, new[] { propertyInfo.PropertyType });
+      var setIlGenerator = setMethodBuilder.GetILGenerator();
+      setIlGenerator.DeclareLocal(typeof(bool));
+      var endLabel = setIlGenerator.DefineLabel();
+      setIlGenerator.Emit(OpCodes.Ldarg_0);
+      setIlGenerator.Emit(OpCodes.Ldarg_1);
+      setIlGenerator.Emit(OpCodes.Isinst, propertyBuilder.PropertyType);
+      setIlGenerator.Emit(OpCodes.Call, propertyBuilder.SetMethod);
+      setIlGenerator.Emit(OpCodes.Ret);
+      typeBuilder.DefineMethodOverride(setMethodBuilder, propertyInfo.SetMethod);
+
+      var interfacePropertyBuilder = typeBuilder.DefineProperty(type.FullName + "." + propertyInfo.Name, PropertyAttributes.None, propertyInfo.PropertyType, Type.EmptyTypes);
+      interfacePropertyBuilder.SetGetMethod(getMethodBuilder);
+      interfacePropertyBuilder.SetSetMethod(setMethodBuilder);
     }
   }
 }

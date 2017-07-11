@@ -1,4 +1,5 @@
-﻿using ObjectVersioning.Actions;
+﻿using Newtonsoft.Json;
+using ObjectVersioning.Actions;
 using System;
 using System.Collections.Generic;
 
@@ -10,6 +11,7 @@ namespace ObjectVersioning
 
     protected IHistoryStorage HistoryStorage { get; private set; }
 
+    [JsonConstructor]
     public VersionedValue(Guid id)
     {
       Id = id;
@@ -18,7 +20,7 @@ namespace ObjectVersioning
 
     public VersionedValue(IHistoryStorage historyStorage)
     {
-      if(historyStorage != null)
+      if(historyStorage == null)
       {
         throw new ArgumentNullException(nameof(historyStorage));
       }

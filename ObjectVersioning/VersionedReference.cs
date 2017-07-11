@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -8,6 +9,7 @@ namespace ObjectVersioning
   {
     public Guid TargetId { get; }
 
+    [JsonConstructor]
     public VersionedReference(Guid id, Guid targetId)
       : base(id)
     {

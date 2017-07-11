@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using ObjectVersioning.Actions;
 using System;
 using System.Collections.Generic;
@@ -6,6 +7,7 @@ namespace ObjectVersioning
 {
   public class VersionedObject : VersionedValue
   {
+    [JsonConstructor]
     public VersionedObject(Guid id)
       : base(id)
     {
