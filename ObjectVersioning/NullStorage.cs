@@ -1,4 +1,5 @@
-﻿using ObjectVersioning.Actions;
+﻿using System;
+using ObjectVersioning.Actions;
 
 namespace ObjectVersioning
 {
@@ -11,6 +12,11 @@ namespace ObjectVersioning
     public void RecordAction(EditAction editAction)
     {
       
+    }
+
+    public object ResolveObject(Guid id)
+    {
+      return null;
     }
   }
 }

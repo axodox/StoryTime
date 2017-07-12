@@ -39,8 +39,11 @@ namespace StoryTime.Test
     string Name { get; set; }
 
     int Number { get; set; }
-
+    
     ITestEntity Child { get; set; }
+
+    [Reference]
+    ITestEntity ChildReference { get; set; }
   }
 
   class TestEntity : VersionedObject, ITestEntity
@@ -98,6 +101,21 @@ namespace StoryTime.Test
       }
     }
 
+    private VersionedReference _childReference;
+    public VersionedReference ChildReference
+    {
+      get
+      {
+        return _childReference;
+      }
+      set
+      {
+        if (Equals(value, _childReference)) return;
+        _childReference = value;
+        RecordSetPropertyAction(nameof(ChildReference), value);
+      }
+    }
+
     ITestEntity ITestEntity.Child
     {
       get
@@ -107,6 +125,25 @@ namespace StoryTime.Test
       set
       {
         Child = value as TestEntity;
+      }
+    }
+
+    ITestEntity ITestEntity.ChildReference
+    {
+      get
+      {
+        return ChildReference.Reference as ITestEntity;
+      }
+      set
+      {
+        if (value == null)
+        {
+          ChildReference = null;
+        }
+        else
+        {
+          ChildReference = new VersionedReference(value);
+        }
       }
     }
   }
