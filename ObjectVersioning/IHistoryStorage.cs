@@ -1,5 +1,4 @@
 ﻿using ObjectVersioning.Actions;
-using System;
 
 namespace ObjectVersioning
 {

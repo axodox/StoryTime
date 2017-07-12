@@ -1,7 +1,6 @@
 using Newtonsoft.Json;
 using ObjectVersioning.Actions;
 using System;
-using System.Collections.Generic;
 
 namespace ObjectVersioning
 {
@@ -20,7 +19,7 @@ namespace ObjectVersioning
 
     }
 
-    protected void RecordSetPropertyActionAction(string name, object value)
+    protected void RecordSetPropertyAction(string name, object value)
     {
       var action = new SetPropertyAction(Id, name, value);
       HistoryStorage.RecordAction(action);

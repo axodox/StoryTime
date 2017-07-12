@@ -1,7 +1,6 @@
 ﻿using Newtonsoft.Json;
 using ObjectVersioning.Actions;
 using System;
-using System.Collections.Generic;
 
 namespace ObjectVersioning
 {

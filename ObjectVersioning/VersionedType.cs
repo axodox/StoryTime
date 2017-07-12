@@ -1,12 +1,9 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Text;
-using System.Threading;
 
 namespace ObjectVersioning
 {
@@ -29,6 +26,12 @@ namespace ObjectVersioning
     private static readonly object _syncRoot = new object();
 
     private static readonly ConcurrentDictionary<string, Type> _types = new ConcurrentDictionary<string, Type>();
+
+    private static readonly MethodInfo _equalsMethodInfo = typeof(object).GetRuntimeMethod("Equals", new[] { typeof(object), typeof(object) });
+
+    private static readonly ConstructorInfo _jsonAttributeConstructor = typeof(JsonConstructorAttribute).GetTypeInfo().DeclaredConstructors.FirstOrDefault(p => p.GetParameters().Length == 0);
+
+    private static readonly MethodInfo _recordSetPropertyActionMethodInfo = typeof(VersionedObject).GetTypeInfo().GetDeclaredMethod("RecordSetPropertyAction");
 
     static VersionedType()
     {
@@ -88,7 +91,7 @@ namespace ObjectVersioning
       var typeInfo = type.GetTypeInfo();
       if (!typeInfo.IsInterface)
       {
-        throw new ArgumentException("The supplied type must be an interface", nameof(type));
+        throw new ArgumentException("The supplied type must be an interface!", nameof(type));
       }
 
       var baseType = typeof(VersionedObject);
@@ -117,10 +120,10 @@ namespace ObjectVersioning
       var parameters = baseConstructor.GetParameters();
       var parameterTypes = parameters.Select(p => p.ParameterType).ToArray();
       var constructorBuilder = typeBuilder.DefineConstructor(_constructorAttributes, CallingConventions.HasThis, parameterTypes);
-      
-      if(baseConstructor.GetCustomAttribute<JsonConstructorAttribute>() != null)
+
+      if (baseConstructor.GetCustomAttribute<JsonConstructorAttribute>() != null)
       {
-        var jsonConstructor = typeof(JsonConstructorAttribute).GetTypeInfo().DeclaredConstructors.FirstOrDefault(p => p.GetParameters().Length == 0);
+        var jsonConstructor = _jsonAttributeConstructor;
         constructorBuilder.SetCustomAttribute(new CustomAttributeBuilder(jsonConstructor, new object[0]));
       }
 
@@ -131,7 +134,10 @@ namespace ObjectVersioning
 
       var ilGenerator = constructorBuilder.GetILGenerator();
       ilGenerator.Emit(OpCodes.Ldarg_0);
-      ilGenerator.Emit(OpCodes.Ldarg_1);
+      for (var index = 0; index < parameters.Length; index++)
+      {
+        ilGenerator.Emit(OpCodes.Ldarg, (short)(index + 1));
+      }
       ilGenerator.Emit(OpCodes.Call, baseConstructor);
       ilGenerator.Emit(OpCodes.Ret);
     }
@@ -145,7 +151,7 @@ namespace ObjectVersioning
       {
         propertyType = Get(type);
       }
-      
+
       var fieldBuilder = typeBuilder.DefineField("_" + propertyName, propertyType, FieldAttributes.Private);
 
       var getMethodBuilder = typeBuilder.DefineMethod("get_" + propertyName, _propertyMethodAttributes, propertyType, Type.EmptyTypes);
@@ -163,7 +169,7 @@ namespace ObjectVersioning
       if (!propertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyType);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
       if (!propertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyType);
-      setIlGenerator.Emit(OpCodes.Call, typeof(object).GetRuntimeMethod("Equals", new[] { typeof(object), typeof(object) }));
+      setIlGenerator.Emit(OpCodes.Call, _equalsMethodInfo);
       setIlGenerator.Emit(OpCodes.Brtrue_S, endLabel);
       setIlGenerator.Emit(OpCodes.Ldarg_0);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
@@ -172,7 +178,7 @@ namespace ObjectVersioning
       setIlGenerator.Emit(OpCodes.Ldstr, propertyName);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
       if (!propertyType.IsByRef) setIlGenerator.Emit(OpCodes.Box, propertyType);
-      setIlGenerator.Emit(OpCodes.Call, typeof(VersionedObject).GetTypeInfo().GetDeclaredMethod("RecordSetPropertyActionAction"));
+      setIlGenerator.Emit(OpCodes.Call, _recordSetPropertyActionMethodInfo);
       setIlGenerator.MarkLabel(endLabel);
       setIlGenerator.Emit(OpCodes.Ret);
 
@@ -188,7 +194,7 @@ namespace ObjectVersioning
 
     private static void DefineInterfaceProperty(Type type, TypeBuilder typeBuilder, PropertyInfo propertyInfo, PropertyBuilder propertyBuilder)
     {
-      var getMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".get_" + propertyInfo.Name, _interfacePropertyMethodAttributes, propertyInfo.PropertyType, Type.EmptyTypes);      
+      var getMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".get_" + propertyInfo.Name, _interfacePropertyMethodAttributes, propertyInfo.PropertyType, Type.EmptyTypes);
       var getIlGenerator = getMethodBuilder.GetILGenerator();
       getIlGenerator.Emit(OpCodes.Ldarg_0);
       getIlGenerator.Emit(OpCodes.Call, propertyBuilder.GetMethod);

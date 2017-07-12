@@ -1,13 +1,26 @@
-﻿using Newtonsoft.Json;
-using ObjectVersioning;
-using StoryTime.Data;
+﻿using ObjectVersioning;
 using System;
+using System.Diagnostics;
 
 namespace StoryTime.Test
 {
   class Program
   {
     static void Main(string[] args)
+    {
+      var stopwatch = new Stopwatch();
+      stopwatch.Start();
+      ITestEntity testEntity = CreateTestEntity();
+
+      stopwatch.Stop();
+      Console.WriteLine(stopwatch.Elapsed.TotalMilliseconds);
+      Console.ReadLine();
+
+      var text = VersionedType.Serialize(testEntity);
+      var entity = VersionedType.Deserialize<ITestEntity>(text);
+    }
+
+    private static ITestEntity CreateTestEntity()
     {
       var testEntity = VersionedType.New<ITestEntity>();
       testEntity.Name = "sad";
@@ -17,9 +30,7 @@ namespace StoryTime.Test
       childEntity.Name = "child";
       childEntity.Number = 1;
       testEntity.Child = childEntity;
-
-      var text = VersionedType.Serialize(testEntity);
-      var entity = VersionedType.Deserialize<ITestEntity>(text);
+      return testEntity;
     }
   }
 
@@ -53,7 +64,7 @@ namespace StoryTime.Test
       {
         if (Equals(value, _name)) return;
         _name = value;
-        RecordSetPropertyActionAction(nameof(Name), value);
+        RecordSetPropertyAction(nameof(Name), value);
       }
     }
 
@@ -68,7 +79,7 @@ namespace StoryTime.Test
       {
         if (Equals(value, _number)) return;
         _number = value;
-        RecordSetPropertyActionAction(nameof(Number), value);
+        RecordSetPropertyAction(nameof(Number), value);
       }
     }
 
@@ -83,7 +94,7 @@ namespace StoryTime.Test
       {
         if (Equals(value, _child)) return;
         _child = value;
-        RecordSetPropertyActionAction(nameof(Child), value);
+        RecordSetPropertyAction(nameof(Child), value);
       }
     }
 
