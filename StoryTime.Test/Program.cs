@@ -14,7 +14,7 @@ namespace StoryTime.Test
 
       stopwatch.Stop();
       Console.WriteLine(stopwatch.Elapsed.TotalMilliseconds);
-      Console.ReadLine();
+      //Console.ReadLine();
 
       var text = VersionedType.Serialize(testEntity);
       var entity = VersionedType.Deserialize<ITestEntity>(text);
@@ -30,6 +30,7 @@ namespace StoryTime.Test
       childEntity.Name = "child";
       childEntity.Number = 1;
       testEntity.Child = childEntity;
+      testEntity.ChildReference = childEntity;
       return testEntity;
     }
   }
@@ -132,18 +133,11 @@ namespace StoryTime.Test
     {
       get
       {
-        return ChildReference.Reference as ITestEntity;
+        return ChildReference?.Reference as ITestEntity;
       }
       set
       {
-        if (value == null)
-        {
-          ChildReference = null;
-        }
-        else
-        {
-          ChildReference = new VersionedReference(value);
-        }
+        ChildReference = VersionedReference.FromValue(value);
       }
     }
   }

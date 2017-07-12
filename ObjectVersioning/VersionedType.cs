@@ -147,9 +147,17 @@ namespace ObjectVersioning
       var propertyName = propertyInfo.Name;
       var propertyType = propertyInfo.PropertyType;
       var isInterface = propertyType.GetTypeInfo().IsInterface;
+      var isReference = propertyInfo.GetCustomAttribute<ReferenceAttribute>() != null;
       if (isInterface)
       {
-        propertyType = Get(type);
+        if(!isReference)
+        {
+          propertyType = Get(type);
+        }
+        else
+        {
+          propertyType = typeof(VersionedReference);
+        }
       }
 
       var fieldBuilder = typeBuilder.DefineField("_" + propertyName, propertyType, FieldAttributes.Private);
@@ -162,7 +170,6 @@ namespace ObjectVersioning
 
       var setMethodBuilder = typeBuilder.DefineMethod("set_" + propertyName, _propertyMethodAttributes, null, new[] { propertyType });
       var setIlGenerator = setMethodBuilder.GetILGenerator();
-      setIlGenerator.DeclareLocal(typeof(bool));
       var endLabel = setIlGenerator.DefineLabel();
       setIlGenerator.Emit(OpCodes.Ldarg_0);
       setIlGenerator.Emit(OpCodes.Ldfld, fieldBuilder);
@@ -188,7 +195,14 @@ namespace ObjectVersioning
 
       if (isInterface)
       {
-        DefineInterfaceProperty(type, typeBuilder, propertyInfo, propertyBuilder);
+        if (!isReference)
+        {
+          DefineInterfaceProperty(type, typeBuilder, propertyInfo, propertyBuilder);
+        }
+        else
+        {
+          DefineReferenceInterfaceProperty(type, typeBuilder, propertyInfo, propertyBuilder, fieldBuilder);
+        }
       }
     }
 
@@ -202,12 +216,44 @@ namespace ObjectVersioning
       typeBuilder.DefineMethodOverride(getMethodBuilder, propertyInfo.GetMethod);
 
       var setMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".set_" + propertyInfo.Name, _interfacePropertyMethodAttributes, null, new[] { propertyInfo.PropertyType });
-      var setIlGenerator = setMethodBuilder.GetILGenerator();
-      setIlGenerator.DeclareLocal(typeof(bool));
-      var endLabel = setIlGenerator.DefineLabel();
+      var setIlGenerator = setMethodBuilder.GetILGenerator();      
       setIlGenerator.Emit(OpCodes.Ldarg_0);
       setIlGenerator.Emit(OpCodes.Ldarg_1);
       setIlGenerator.Emit(OpCodes.Isinst, propertyBuilder.PropertyType);
+      setIlGenerator.Emit(OpCodes.Call, propertyBuilder.SetMethod);
+      setIlGenerator.Emit(OpCodes.Ret);
+      typeBuilder.DefineMethodOverride(setMethodBuilder, propertyInfo.SetMethod);
+
+      var interfacePropertyBuilder = typeBuilder.DefineProperty(type.FullName + "." + propertyInfo.Name, PropertyAttributes.None, propertyInfo.PropertyType, Type.EmptyTypes);
+      interfacePropertyBuilder.SetGetMethod(getMethodBuilder);
+      interfacePropertyBuilder.SetSetMethod(setMethodBuilder);
+    }
+
+    private static void DefineReferenceInterfaceProperty(Type type, TypeBuilder typeBuilder, PropertyInfo propertyInfo, PropertyBuilder propertyBuilder, FieldBuilder fieldBuilder)
+    {
+      var getMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".get_" + propertyInfo.Name, _interfacePropertyMethodAttributes, propertyInfo.PropertyType, Type.EmptyTypes);
+      var getIlGenerator = getMethodBuilder.GetILGenerator();
+      var endLabel = getIlGenerator.DefineLabel();
+      getIlGenerator.Emit(OpCodes.Ldarg_0);
+      getIlGenerator.Emit(OpCodes.Ldfld, fieldBuilder);
+      getIlGenerator.Emit(OpCodes.Dup);
+      getIlGenerator.Emit(OpCodes.Brfalse_S, endLabel);
+      getIlGenerator.Emit(OpCodes.Call, typeof(VersionedReference).GetRuntimeProperty("Reference").GetMethod);
+      getIlGenerator.Emit(OpCodes.Ret);
+      getIlGenerator.MarkLabel(endLabel);
+      getIlGenerator.Emit(OpCodes.Pop);
+      getIlGenerator.Emit(OpCodes.Ldnull);
+      getIlGenerator.Emit(OpCodes.Ret);
+      typeBuilder.DefineMethodOverride(getMethodBuilder, propertyInfo.GetMethod);
+
+      var setMethodBuilder = typeBuilder.DefineMethod(type.FullName + ".set_" + propertyInfo.Name, _interfacePropertyMethodAttributes, null, new[] { propertyInfo.PropertyType });
+      var setIlGenerator = setMethodBuilder.GetILGenerator();
+      setIlGenerator.DeclareLocal(typeof(VersionedReference));
+      setIlGenerator.Emit(OpCodes.Ldarg_1);
+      setIlGenerator.Emit(OpCodes.Call, typeof(VersionedReference).GetRuntimeMethod("FromValue", new[] { typeof(object) }));
+      setIlGenerator.Emit(OpCodes.Stloc_0);
+      setIlGenerator.Emit(OpCodes.Ldarg_0);
+      setIlGenerator.Emit(OpCodes.Ldloc_0);
       setIlGenerator.Emit(OpCodes.Call, propertyBuilder.SetMethod);
       setIlGenerator.Emit(OpCodes.Ret);
       typeBuilder.DefineMethodOverride(setMethodBuilder, propertyInfo.SetMethod);

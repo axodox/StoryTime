@@ -6,26 +6,24 @@ namespace ObjectVersioning
 {
   public abstract class VersionedValue
   {
-    public Guid Id { get; }
+    [JsonIgnore]
+    public IHistoryStorage HistoryStorage { get; private set; }
 
-    protected IHistoryStorage HistoryStorage { get; private set; }
+    public Guid Id { get; }    
 
     [JsonConstructor]
     public VersionedValue(Guid id)
+      : this(NullStorage.Instance, id) { }
+
+    public VersionedValue(IHistoryStorage historyStorage) 
+      : this(historyStorage, Guid.NewGuid()) { }
+
+    public VersionedValue(IHistoryStorage historyStorage, Guid id)
     {
+      HistoryStorage = historyStorage ?? throw new ArgumentNullException(nameof(historyStorage));
       Id = id;
-      HistoryStorage = NullStorage.Instance;
-    }
 
-    public VersionedValue(IHistoryStorage historyStorage)
-    {
-      if(historyStorage == null)
-      {
-        throw new ArgumentNullException(nameof(historyStorage));
-      }
-      Id = Guid.NewGuid();
-      HistoryStorage = historyStorage;
-
+      HistoryStorage.RegisterObject(this);
       RecordNewObjectAction();
     }
 

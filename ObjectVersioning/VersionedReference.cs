@@ -8,6 +8,7 @@ namespace ObjectVersioning
     public Guid TargetId { get; }
 
     private object _reference;
+    [JsonIgnore]
     public object Reference
     {
       get
@@ -23,16 +24,26 @@ namespace ObjectVersioning
       TargetId = targetId;
     }
 
-    public VersionedReference(object value)
-      : base((value as VersionedValue).Id)
-    {
-      _reference = value;
-    }
-
     public VersionedReference(IHistoryStorage historyStorage, Guid targetId)
       : base(historyStorage)
     {
       TargetId = targetId;
+    }
+
+    public static VersionedReference FromValue(object value)
+    {
+      switch(value)
+      {
+        case VersionedReference versionedReference:
+          return versionedReference;
+        case VersionedValue versionedValue:
+          return new VersionedReference(versionedValue.HistoryStorage, versionedValue.Id)
+          {
+            _reference = versionedValue
+          };
+        default:
+          return null;
+      }
     }
   }
 }
